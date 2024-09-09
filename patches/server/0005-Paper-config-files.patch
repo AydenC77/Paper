@@ -980,7 +980,7 @@ index 0000000000000000000000000000000000000000..1029b6de6f36b08bf634b4056ef57013
 +    private static final Function<ContextMap, String> WORLD_HEADER = map -> String.format("""
 +        This is a world configuration file for Paper.
 +        This file may start empty but can be filled with settings to override ones in the %s/%s
-+        
++
 +        World: %s (%s)""",
 +        PaperConfigurations.CONFIG_DIR,
 +        PaperConfigurations.WORLD_DEFAULTS_CONFIG_FILE_NAME,
@@ -992,7 +992,7 @@ index 0000000000000000000000000000000000000000..1029b6de6f36b08bf634b4056ef57013
 +        The global and world default configuration files have moved to %s
 +        and the world-specific configuration file has been moved inside
 +        the respective world folder.
-+        
++
 +        See https://docs.papermc.io/paper/configuration for more information.
 +        """;
 +
@@ -5075,12 +5075,12 @@ index b334265d4015fec13d7fedbffba2b6c22f4c8bc8..5b4ac7b4fd0077e900e9f788963f1613
 +            org.bukkit.configuration.file.YamlConfiguration bukkitConfiguration = io.papermc.paper.configuration.PaperConfigurations.loadLegacyConfigFile((File) optionset.valueOf("bukkit-settings"));
 +            org.bukkit.configuration.file.YamlConfiguration spigotConfiguration = io.papermc.paper.configuration.PaperConfigurations.loadLegacyConfigFile((File) optionset.valueOf("spigot-settings"));
 +            // Paper end - load config files early for access below if needed
- 
+
              if (optionset.has("initSettings")) { // CraftBukkit
                  // CraftBukkit start - SPIGOT-5761: Create bukkit.yml and commands.yml if not present
 @@ -163,7 +167,7 @@ public class Main {
              }
- 
+
              File file = (File) optionset.valueOf("universe"); // CraftBukkit
 -            Services services = Services.create(new YggdrasilAuthenticationService(Proxy.NO_PROXY), file);
 +            Services services = Services.create(new YggdrasilAuthenticationService(Proxy.NO_PROXY), file, optionset); // Paper - pass OptionSet to load paper config files
@@ -5096,7 +5096,7 @@ index db2031ffbc802bd850ab40acaec2a9624b753f4c..299afe72a2fc2affca196f2fdfbf27e5
      public final double[] recentTps = new double[ 3 ];
      // Spigot end
 +    public final io.papermc.paper.configuration.PaperConfigurations paperConfigurations; // Paper - add paper configuration files
- 
+
      public static <S extends MinecraftServer> S spin(Function<Thread, S> serverFactory) {
          AtomicReference<S> atomicreference = new AtomicReference();
 @@ -405,6 +406,7 @@ public abstract class MinecraftServer extends ReentrantBlockableEventLoop<TickTa
@@ -5105,7 +5105,7 @@ index db2031ffbc802bd850ab40acaec2a9624b753f4c..299afe72a2fc2affca196f2fdfbf27e5
          // CraftBukkit end
 +        this.paperConfigurations = services.paperConfigurations(); // Paper - add paper configuration files
      }
- 
+
      private void readScoreboard(DimensionDataStorage persistentStateManager) {
 diff --git a/src/main/java/net/minecraft/server/Services.java b/src/main/java/net/minecraft/server/Services.java
 index dfbb04800d6f1dcbb909fcdfeb1ebf1a5efa6a48..5928e5f1934b8e247ba516595018ed5c633d3b5d 100644
@@ -5114,7 +5114,7 @@ index dfbb04800d6f1dcbb909fcdfeb1ebf1a5efa6a48..5928e5f1934b8e247ba516595018ed5c
 @@ -10,16 +10,32 @@ import javax.annotation.Nullable;
  import net.minecraft.server.players.GameProfileCache;
  import net.minecraft.util.SignatureValidator;
- 
+
 +
  public record Services(
 -    MinecraftSessionService sessionService, ServicesKeySet servicesKeySet, GameProfileRepository profileRepository, GameProfileCache profileCache
@@ -5131,7 +5131,7 @@ index dfbb04800d6f1dcbb909fcdfeb1ebf1a5efa6a48..5928e5f1934b8e247ba516595018ed5c
 +    }
 +    // Paper end - add paper configuration files
      private static final String USERID_CACHE_FILE = "usercache.json";
- 
+
 -    public static Services create(YggdrasilAuthenticationService authenticationService, File rootDirectory) {
 +    public static Services create(YggdrasilAuthenticationService authenticationService, File rootDirectory, joptsimple.OptionSet optionSet) throws Exception { // Paper - add optionset to load paper config files
          MinecraftSessionService minecraftSessionService = authenticationService.createMinecraftSessionService();
@@ -5145,7 +5145,7 @@ index dfbb04800d6f1dcbb909fcdfeb1ebf1a5efa6a48..5928e5f1934b8e247ba516595018ed5c
 +        return new Services(minecraftSessionService, authenticationService.getServicesKeySet(), gameProfileRepository, gameProfileCache, paperConfigurations);
 +        // Paper end - load paper config files from cli options
      }
- 
+
      @Nullable
 diff --git a/src/main/java/net/minecraft/server/dedicated/DedicatedServer.java b/src/main/java/net/minecraft/server/dedicated/DedicatedServer.java
 index d3c7c1e016af5d04b5a18a6ced898cf4dc9b1700..cd26616aba6abd44abc5eb8b01cc96f29248aecd 100644
@@ -5159,7 +5159,7 @@ index d3c7c1e016af5d04b5a18a6ced898cf4dc9b1700..cd26616aba6abd44abc5eb8b01cc96f2
 +        this.paperConfigurations.initializeGlobalConfiguration(this.registryAccess());
 +        this.paperConfigurations.initializeWorldDefaultsConfiguration(this.registryAccess());
 +        // Paper end - initialize global and world-defaults configuration
- 
+
          this.setPvpAllowed(dedicatedserverproperties.pvp);
          this.setFlightAllowed(dedicatedserverproperties.allowFlight);
 diff --git a/src/main/java/net/minecraft/server/dedicated/Settings.java b/src/main/java/net/minecraft/server/dedicated/Settings.java
@@ -5180,7 +5180,7 @@ index 63ad1280667a02e00f9c636193e38f933cad0185..a696a0d168987aaa4e59c471a23eeb48
 +++ b/src/main/java/net/minecraft/server/level/ServerLevel.java
 @@ -242,7 +242,7 @@ public class ServerLevel extends Level implements WorldGenLevel {
          // Holder holder = worlddimension.type(); // CraftBukkit - decompile error
- 
+
          // Objects.requireNonNull(minecraftserver); // CraftBukkit - decompile error
 -        super(iworlddataserver, resourcekey, minecraftserver.registryAccess(), worlddimension.type(), minecraftserver::getProfiler, false, flag, i, minecraftserver.getMaxChainedNeighborUpdates(), gen, biomeProvider, env);
 +        super(iworlddataserver, resourcekey, minecraftserver.registryAccess(), worlddimension.type(), minecraftserver::getProfiler, false, flag, i, minecraftserver.getMaxChainedNeighborUpdates(), gen, biomeProvider, env, spigotConfig -> minecraftserver.paperConfigurations.createWorldConfig(io.papermc.paper.configuration.PaperConfigurations.createWorldContextMap(convertable_conversionsession.levelDirectory.path(), iworlddataserver.getLevelName(), resourcekey.location(), spigotConfig, minecraftserver.registryAccess(), iworlddataserver.getGameRules()))); // Paper - create paper world configs
@@ -5201,27 +5201,27 @@ index e433037a03ffafabb952887ae3980e1d51411d4c..c061813d275fbc48d7629cc59d90dbb4
 +        return this.paperConfig;
 +    }
 +    // Paper end - add paper world config
- 
+
      public final SpigotTimings.WorldTimingsHandler timings; // Spigot
      public static BlockPos lastPhysicsProblem; // Spigot
 @@ -173,8 +179,9 @@ public abstract class Level implements LevelAccessor, AutoCloseable {
- 
+
      public abstract ResourceKey<LevelStem> getTypeKey();
- 
+
 -    protected Level(WritableLevelData worlddatamutable, ResourceKey<Level> resourcekey, RegistryAccess iregistrycustom, Holder<DimensionType> holder, Supplier<ProfilerFiller> supplier, boolean flag, boolean flag1, long i, int j, org.bukkit.generator.ChunkGenerator gen, org.bukkit.generator.BiomeProvider biomeProvider, org.bukkit.World.Environment env) {
 +    protected Level(WritableLevelData worlddatamutable, ResourceKey<Level> resourcekey, RegistryAccess iregistrycustom, Holder<DimensionType> holder, Supplier<ProfilerFiller> supplier, boolean flag, boolean flag1, long i, int j, org.bukkit.generator.ChunkGenerator gen, org.bukkit.generator.BiomeProvider biomeProvider, org.bukkit.World.Environment env, java.util.function.Function<org.spigotmc.SpigotWorldConfig, io.papermc.paper.configuration.WorldConfiguration> paperWorldConfigCreator) { // Paper - create paper world config
          this.spigotConfig = new org.spigotmc.SpigotWorldConfig(((net.minecraft.world.level.storage.PrimaryLevelData) worlddatamutable).getLevelName()); // Spigot
 +        this.paperConfig = paperWorldConfigCreator.apply(this.spigotConfig); // Paper - create paper world config
          this.generator = gen;
          this.world = new CraftWorld((ServerLevel) this, gen, biomeProvider, env);
- 
+
 diff --git a/src/main/java/org/bukkit/craftbukkit/CraftServer.java b/src/main/java/org/bukkit/craftbukkit/CraftServer.java
 index 3c0691ef65c8db1002b76984f4ddfe2072d793c9..b3c4cdd9cfff6857f3007fbd91a280bcc53ab072 100644
 --- a/src/main/java/org/bukkit/craftbukkit/CraftServer.java
 +++ b/src/main/java/org/bukkit/craftbukkit/CraftServer.java
 @@ -962,6 +962,7 @@ public final class CraftServer implements Server {
          }
- 
+
          org.spigotmc.SpigotConfig.init((File) this.console.options.valueOf("spigot-settings")); // Spigot
 +        this.console.paperConfigurations.reloadConfigs(this.console);
          for (ServerLevel world : this.console.getAllLevels()) {
@@ -5250,7 +5250,7 @@ index 273a6658deacbf00f6cc498cf3fcd20d144bd9e4..cf06abf508fab734f5945e1d292c0151
 +                // Paper end
              }
          };
- 
+
 diff --git a/src/main/java/org/spigotmc/SpigotConfig.java b/src/main/java/org/spigotmc/SpigotConfig.java
 index 038fd72710b3084c17d52d4cce087a5bd0aa3a01..e42677a14ec8e1a42747603fb4112822e326fb70 100644
 --- a/src/main/java/org/spigotmc/SpigotConfig.java
@@ -5258,7 +5258,7 @@ index 038fd72710b3084c17d52d4cce087a5bd0aa3a01..e42677a14ec8e1a42747603fb4112822
 @@ -96,7 +96,7 @@ public class SpigotConfig
          }
      }
- 
+
 -    static void readConfig(Class<?> clazz, Object instance)
 +    public static void readConfig(Class<?> clazz, Object instance) // Paper - package-private -> public
      {
@@ -5269,7 +5269,7 @@ index a6d2ce801b236b046b94913bccf7eccfc561f35a..8bc7a9da0eb345e65f42461e2fb22731
 --- a/src/main/java/org/spigotmc/SpigotWorldConfig.java
 +++ b/src/main/java/org/spigotmc/SpigotWorldConfig.java
 @@ -58,8 +58,14 @@ public class SpigotWorldConfig
- 
+
      public int getInt(String path, int def)
      {
 -        this.config.addDefault( "world-settings.default." + path, def );
@@ -5283,7 +5283,7 @@ index a6d2ce801b236b046b94913bccf7eccfc561f35a..8bc7a9da0eb345e65f42461e2fb22731
 +        return this.config.getInt( "world-settings." + this.worldName + "." + path, this.config.getInt( "world-settings.default." + path, def ) );
 +        // Paper end
      }
- 
+
      public <T> List getList(String path, T def)
 @@ -138,14 +144,14 @@ public class SpigotWorldConfig
      public double itemMerge;
@@ -5293,7 +5293,7 @@ index a6d2ce801b236b046b94913bccf7eccfc561f35a..8bc7a9da0eb345e65f42461e2fb22731
 +        this.itemMerge = this.getDouble("merge-radius.item", 0.5 );
          this.log( "Item Merge Radius: " + this.itemMerge );
      }
- 
+
      public double expMerge;
      private void expMerge()
      {
@@ -5301,9 +5301,9 @@ index a6d2ce801b236b046b94913bccf7eccfc561f35a..8bc7a9da0eb345e65f42461e2fb22731
 +        this.expMerge = this.getDouble("merge-radius.exp", -1 );
          this.log( "Experience Merge Radius: " + this.expMerge );
      }
- 
+
 @@ -197,7 +203,7 @@ public class SpigotWorldConfig
- 
+
      public int animalActivationRange = 32;
      public int monsterActivationRange = 32;
 -    public int raiderActivationRange = 48;
@@ -5314,7 +5314,7 @@ index a6d2ce801b236b046b94913bccf7eccfc561f35a..8bc7a9da0eb345e65f42461e2fb22731
 @@ -212,10 +218,10 @@ public class SpigotWorldConfig
          this.log( "Entity Activation Range: An " + this.animalActivationRange + " / Mo " + this.monsterActivationRange + " / Ra " + this.raiderActivationRange + " / Mi " + this.miscActivationRange + " / Tiv " + this.tickInactiveVillagers + " / Isa " + this.ignoreSpectatorActivation );
      }
- 
+
 -    public int playerTrackingRange = 48;
 -    public int animalTrackingRange = 48;
 -    public int monsterTrackingRange = 48;
@@ -5358,9 +5358,8 @@ index 5bda0bc976920f224586f2c0e083b771c676e307..4e9612600822bc1b52b8528dff2783d4
 +++ b/src/test/java/org/bukkit/support/AbstractTestingBase.java
 @@ -68,6 +68,7 @@ public abstract class AbstractTestingBase {
          BIOMES = REGISTRY_CUSTOM.registryOrThrow(Registries.BIOME);
- 
+
          DummyServer.setup();
 +        io.papermc.paper.configuration.GlobalConfigTestingBase.setupGlobalConfigForTest(); // Paper
- 
+
          CraftRegistry.setMinecraftRegistry(REGISTRY_CUSTOM);
- 
